@@ -1,4 +1,4 @@
-package main
+package extract
 
 import (
 	"bytes"
@@ -117,7 +117,7 @@ func writeFile(name string, content []byte) error {
 	return os.WriteFile(name, content, 0644)
 }
 
-func extractFiles(content []byte) error {
+func ExtractFiles(content []byte, dest string) error {
 	var nameReader func(*bytes.Reader, uint32, *EntryName) error
 	err := extractBatch(bytes.NewReader(content), readNameWindows, nil)
 	if err == nil {
@@ -133,23 +133,24 @@ func extractFiles(content []byte) error {
 	return extractBatch(bytes.NewReader(content), nameReader, writeFile)
 }
 
-func main() {
-	entries, err := ioutil.ReadDir(".")
-	if err != nil {
-		fmt.Println("ioutil.ReadDir failed:", err)
-		return
-	}
-	for _, entry := range entries {
-		fmt.Println(entry.Name())
-		batch := "./" + entry.Name()
-		data, err := ioutil.ReadFile(batch)
-		if err != nil {
-			continue
-		}
-		err = extractFiles(data)
-		if err != nil {
-			continue
-		}
-	}
-}
-
+// func main() {
+// 	// scalpel -vvv --verbose -t --to <dir> -f --force -z --ungzip -m --match <pattern> {file|dir}
+// 	entries, err := ioutil.ReadDir(".")
+// 	if err != nil {
+// 		fmt.Println("ioutil.ReadDir failed:", err)
+// 		return
+// 	}
+// 	for _, entry := range entries {
+// 		fmt.Println(entry.Name())
+// 		batch := "./" + entry.Name()
+// 		data, err := ioutil.ReadFile(batch)
+// 		if err != nil {
+// 			continue
+// 		}
+// 		err = extractFiles(data)
+// 		if err != nil {
+// 			continue
+// 		}
+// 	}
+// }
+//
