@@ -3,14 +3,15 @@ package extract
 import (
 	"bytes"
 	"encoding/binary"
-	"io/ioutil"
 	"fmt"
-	"io"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/encoding/unicode/utf32"
 	"golang.org/x/text/transform"
+	"io"
+	"io/ioutil"
 	"os"
 	"path"
+	log "github.com/sirupsen/logrus"
 )
 
 type Header struct {
@@ -30,8 +31,8 @@ func readNameWindows(reader *bytes.Reader, length uint32, entry *EntryName) erro
 	if err != nil {
 		return err
 	}
-	win16be := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
-	unicodeReader := transform.NewReader(bytes.NewReader(buf), win16be.NewDecoder())
+	enc := unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM)
+	unicodeReader := transform.NewReader(bytes.NewReader(buf), enc.NewDecoder())
 	decoded, err := ioutil.ReadAll(unicodeReader)
 	if err != nil {
 		return err
@@ -46,8 +47,8 @@ func readNameMac(reader *bytes.Reader, length uint32, entry *EntryName) error {
 	if err != nil {
 		return err
 	}
-	mac32be := utf32.UTF32(utf32.LittleEndian, utf32.IgnoreBOM)
-	unicodeReader := transform.NewReader(bytes.NewReader(buf), mac32be.NewDecoder())
+	enc := utf32.UTF32(utf32.LittleEndian, utf32.IgnoreBOM)
+	unicodeReader := transform.NewReader(bytes.NewReader(buf), enc.NewDecoder())
 	decoded, err := ioutil.ReadAll(unicodeReader)
 	if err != nil {
 		return err
@@ -62,7 +63,7 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 	if err != nil {
 		return err
 	}
-	fmt.Println("header version:", header.Version)
+	// fmt.Println("header version:", header.Version)
 	if header.Version != 2 {
 		return fmt.Errorf("header version %d is not supported", header.Version)
 	}
@@ -92,7 +93,7 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 		if entryName.ContentLength > uint64(reader.Len()) {
 			return fmt.Errorf("ContentLength %d is larger than remaining data %d", entryName.ContentLength, reader.Len())
 		}
-		fmt.Println("type:", entryName.Type, "name:", entryName.Name, "content length:", entryName.ContentLength)
+		// fmt.Println("type:", entryName.Type, "name:", entryName.Name, "content length:", entryName.ContentLength)
 		if writer != nil {
 			content := make([]byte, entryName.ContentLength)
 			err = binary.Read(reader, binary.LittleEndian, &content)
@@ -102,6 +103,8 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 			err = writer(entryName.Name, content)
 			if err != nil {
 				return err
+			} else {
+				log.Infof("Extracted %s", entryName.Name)
 			}
 
 		} else {
@@ -114,21 +117,22 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 	return nil
 }
 
-
 func createWriter(dest string) func(string, []byte) error {
 	return func(name string, content []byte) error {
 		return os.WriteFile(path.Join(dest, name), content, 0644)
 	}
 }
 
-func ExtractFiles(content []byte, dest string) error {
+func ExtractFiles(name string, content []byte, dest string) error {
 	var nameReader func(*bytes.Reader, uint32, *EntryName) error
 	err := extractBatch(bytes.NewReader(content), readNameWindows, nil)
 	if err == nil {
+		log.Infof("Extracting %s as Windows format", name)
 		nameReader = readNameWindows
 	} else {
 		err = extractBatch(bytes.NewReader(content), readNameMac, nil)
 		if err == nil {
+			log.Infof("Extracting %s as Mac format", name)
 			nameReader = readNameMac
 		} else {
 			return err

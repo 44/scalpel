@@ -19,13 +19,12 @@ func main() {
 		return
 	}
 	for _, entry := range entries {
-		fmt.Println(entry.Name())
 		batch := "./" + entry.Name()
 		data, err := ioutil.ReadFile(batch)
 		if err != nil {
 			continue
 		}
-		err = extract.ExtractFiles(data, output)
+		err = extract.ExtractFiles(entry.Name(), data, output)
 		if err != nil {
 			continue
 		}
