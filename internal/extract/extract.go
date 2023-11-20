@@ -10,6 +10,7 @@ import (
 	"golang.org/x/text/encoding/unicode/utf32"
 	"golang.org/x/text/transform"
 	"os"
+	"path"
 )
 
 type Header struct {
@@ -113,8 +114,11 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 	return nil
 }
 
-func writeFile(name string, content []byte) error {
-	return os.WriteFile(name, content, 0644)
+
+func createWriter(dest string) func(string, []byte) error {
+	return func(name string, content []byte) error {
+		return os.WriteFile(path.Join(dest, name), content, 0644)
+	}
 }
 
 func ExtractFiles(content []byte, dest string) error {
@@ -130,27 +134,5 @@ func ExtractFiles(content []byte, dest string) error {
 			return err
 		}
 	}
-	return extractBatch(bytes.NewReader(content), nameReader, writeFile)
+	return extractBatch(bytes.NewReader(content), nameReader, createWriter(dest))
 }
-
-// func main() {
-// 	// scalpel -vvv --verbose -t --to <dir> -f --force -z --ungzip -m --match <pattern> {file|dir}
-// 	entries, err := ioutil.ReadDir(".")
-// 	if err != nil {
-// 		fmt.Println("ioutil.ReadDir failed:", err)
-// 		return
-// 	}
-// 	for _, entry := range entries {
-// 		fmt.Println(entry.Name())
-// 		batch := "./" + entry.Name()
-// 		data, err := ioutil.ReadFile(batch)
-// 		if err != nil {
-// 			continue
-// 		}
-// 		err = extractFiles(data)
-// 		if err != nil {
-// 			continue
-// 		}
-// 	}
-// }
-//
