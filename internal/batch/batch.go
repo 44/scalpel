@@ -1,4 +1,4 @@
-package extract
+package batch
 
 import (
 	"bytes"
@@ -117,14 +117,21 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 	return nil
 }
 
-func createWriter(dest string) func(string, []byte) error {
+func createWriter(dest string, force bool) func(string, []byte) error {
 	os.MkdirAll(dest, 0755)
 	return func(name string, content []byte) error {
+		if !force {
+			_, err := os.Stat(path.Join(dest, name))
+			if !os.IsNotExist(err) {
+				log.Warnf("File %s already exists", path.Join(dest, name))
+				return nil
+			}
+		}
 		return os.WriteFile(path.Join(dest, name), content, 0644)
 	}
 }
 
-func ExtractFiles(name string, content []byte, dest string) error {
+func ExtractFiles(name string, content []byte, dest string, force bool) error {
 	var nameReader func(*bytes.Reader, uint32, *EntryName) error
 	err := extractBatch(bytes.NewReader(content), readNameWindows, nil)
 	if err == nil {
@@ -139,5 +146,37 @@ func ExtractFiles(name string, content []byte, dest string) error {
 			return err
 		}
 	}
-	return extractBatch(bytes.NewReader(content), nameReader, createWriter(dest))
+	return extractBatch(bytes.NewReader(content), nameReader, createWriter(dest, force))
+}
+
+func FindAndExtractBatches(paths []string, dest string, force bool) error {
+	batches := make([]string, 0)
+	real_paths := paths
+	if len(paths) == 0 {
+		real_paths = []string{"."}
+	}
+	for _, path := range real_paths {
+		fi, err := os.Stat(path)
+		if err != nil {
+			log.Warnf("Failed to accesss %s: %s", path, err)
+			continue
+		}
+		if fi.IsDir() {
+		} else {
+			if fi.Size() > 256 {
+				batches = append(batches, path)
+			}
+		}
+	}
+	for _, batch := range batches {
+		content, err := os.ReadFile(batch)
+		if err != nil {
+			return err
+		}
+		err = ExtractFiles(batch, content, dest, force)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
