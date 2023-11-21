@@ -118,6 +118,7 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 }
 
 func createWriter(dest string) func(string, []byte) error {
+	os.MkdirAll(dest, 0755)
 	return func(name string, content []byte) error {
 		return os.WriteFile(path.Join(dest, name), content, 0644)
 	}
