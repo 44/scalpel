@@ -104,7 +104,7 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 			if err != nil {
 				return err
 			} else {
-				log.Infof("Extracted %s", entryName.Name)
+				log.Infof("\t%s", entryName.Name)
 			}
 
 		} else {
@@ -127,12 +127,12 @@ func ExtractFiles(name string, content []byte, dest string) error {
 	var nameReader func(*bytes.Reader, uint32, *EntryName) error
 	err := extractBatch(bytes.NewReader(content), readNameWindows, nil)
 	if err == nil {
-		log.Infof("Extracting %s as Windows format", name)
+		log.Infof("Windows batch: %s", name)
 		nameReader = readNameWindows
 	} else {
 		err = extractBatch(bytes.NewReader(content), readNameMac, nil)
 		if err == nil {
-			log.Infof("Extracting %s as Mac format", name)
+			log.Infof("Mac batch: %s", name)
 			nameReader = readNameMac
 		} else {
 			return err
