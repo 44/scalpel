@@ -1,9 +1,12 @@
 package batch
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/binary"
 	"fmt"
+	"github.com/44/scalpel/internal/odl"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/encoding/unicode/utf32"
 	"golang.org/x/text/transform"
@@ -11,9 +14,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	log "github.com/sirupsen/logrus"
-	"regexp"
 	"path/filepath"
+	"regexp"
+	"strings"
+	log "github.com/sirupsen/logrus"
 )
 
 type Header struct {
@@ -57,6 +61,54 @@ func readNameMac(reader *bytes.Reader, length uint32, entry *EntryName) error {
 	}
 	entry.Name = string(decoded)
 	return nil
+}
+
+func decompressLog(content []byte, name string) ([]byte, string) {
+	var header odl.Header
+	reader := bytes.NewReader(content)
+	err := binary.Read(reader, binary.LittleEndian, &header)
+	if err != nil {
+		return content, name
+	}
+	if header.Magic != odl.HeaderMagicValue {
+		return content, name
+	}
+	if header.Version != 1 && header.Version != 2 && header.Version != 3 {
+		return content, name
+	}
+	if (header.Capabilities & odl.Capabilities_CompressedContents == 0) && (header.Capabilities & odl.Capabilities_CompressedContentsChunked == 0) {
+		return content, name
+	}
+	log.Debugf("Decompressing log with version %d", header.Version)
+	gz, err := gzip.NewReader(reader) //bytes.NewReader(content[256:]))
+	if err != nil {
+		return content, name
+	}
+	defer gz.Close()
+	plain, err := ioutil.ReadAll(gz)
+	if err != nil {
+		return content, name
+	}
+
+	var buf bytes.Buffer
+	writer := bufio.NewWriter(&buf)
+	header.Capabilities &= ^uint32(odl.Capabilities_CompressedContents)
+	header.Capabilities &= ^uint32(odl.Capabilities_CompressedContentsChunked)
+	err = binary.Write(writer, binary.LittleEndian, &header)
+	if err != nil {
+		log.Warnf("Failed to write header: %s", err)
+		return content, name
+	}
+	_, err = writer.Write(plain)
+	if err != nil {
+		log.Warnf("Failed to write content: %s", err)
+		return content, name
+	}
+	log.Debugf("Decompressed log %d to %d bytes", len(content), len(plain))
+	if strings.HasSuffix(name, "gz") {
+		return buf.Bytes(), name[:len(name)-2]
+	}
+	return buf.Bytes(), name
 }
 
 func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *EntryName)  error, writer func(string, []byte) error) error {
@@ -135,16 +187,20 @@ func createWriter(opts Options) func(string, []byte) error {
 	}
 	os.MkdirAll(opts.Dest, 0755)
 	return func(name string, content []byte) error {
-		full_path := path.Join(opts.Dest, name)
+		new_content, new_name := content, name
+		if opts.Unpack {
+			new_content, new_name = decompressLog(content, name)
+		}
+		full_path := path.Join(opts.Dest, new_name)
 		if !opts.Force {
 			_, err := os.Stat(full_path)
 			if !os.IsNotExist(err) {
-				log.Warnf("File %s already exists", path.Join(opts.Dest, name))
+				log.Warnf("File %s already exists", full_path)
 				return nil
 			}
 		}
-		printExtracted(full_path, len(content), opts.Long)
-		return os.WriteFile(full_path, content, 0644)
+		printExtracted(full_path, len(new_content), opts.Long)
+		return os.WriteFile(full_path, new_content, 0644)
 	}
 }
 
