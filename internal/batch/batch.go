@@ -13,6 +13,7 @@ import (
 	"path"
 	log "github.com/sirupsen/logrus"
 	"regexp"
+	"path/filepath"
 )
 
 type Header struct {
@@ -177,6 +178,7 @@ func createFilter(opts Options, writer func(string, []byte) error) func(string, 
 
 func ExtractFiles(name string, content []byte, opts Options) error {
 	var nameReader func(*bytes.Reader, uint32, *EntryName) error
+	log.Debugf("Extracting %s", name)
 	err := extractBatch(bytes.NewReader(content), readNameWindows, nil)
 	if err == nil {
 		log.Infof("Windows batch: %s", name)
@@ -211,16 +213,25 @@ func FindAndExtractBatches(paths []string, opts Options) error {
 	for _, path := range real_paths {
 		fi, err := os.Stat(path)
 		if err != nil {
-			log.Warnf("Failed to accesss %s: %s", path, err)
 			continue
 		}
 		if fi.IsDir() {
+			filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return nil
+				}
+				if (!info.IsDir()) && (info.Size() > 256) {
+					batches = append(batches, path)
+				}
+				return nil
+			})
 		} else {
 			if fi.Size() > 256 {
 				batches = append(batches, path)
 			}
 		}
 	}
+	log.Debugf("Found %d potential batches", len(batches))
 	for _, batch := range batches {
 		content, err := os.ReadFile(batch)
 		if err != nil {
@@ -228,7 +239,7 @@ func FindAndExtractBatches(paths []string, opts Options) error {
 		}
 		err = ExtractFiles(batch, content, opts)
 		if err != nil {
-			return err
+			log.Warnf("Failed to extract %s: %s", batch, err)
 		}
 	}
 	return nil
