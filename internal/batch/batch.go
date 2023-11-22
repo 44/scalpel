@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	log "github.com/sirupsen/logrus"
+	"regexp"
 )
 
 type Header struct {
@@ -63,7 +64,6 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 	if err != nil {
 		return err
 	}
-	// fmt.Println("header version:", header.Version)
 	if header.Version != 2 {
 		return fmt.Errorf("header version %d is not supported", header.Version)
 	}
@@ -93,7 +93,7 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 		if entryName.ContentLength > uint64(reader.Len()) {
 			return fmt.Errorf("ContentLength %d is larger than remaining data %d", entryName.ContentLength, reader.Len())
 		}
-		// fmt.Println("type:", entryName.Type, "name:", entryName.Name, "content length:", entryName.ContentLength)
+
 		if writer != nil {
 			content := make([]byte, entryName.ContentLength)
 			err = binary.Read(reader, binary.LittleEndian, &content)
@@ -117,21 +117,65 @@ func extractBatch(reader *bytes.Reader, nameReader func(*bytes.Reader, uint32, *
 	return nil
 }
 
-func createWriter(dest string, force bool) func(string, []byte) error {
-	os.MkdirAll(dest, 0755)
-	return func(name string, content []byte) error {
-		if !force {
-			_, err := os.Stat(path.Join(dest, name))
-			if !os.IsNotExist(err) {
-				log.Warnf("File %s already exists", path.Join(dest, name))
-				return nil
-			}
-		}
-		return os.WriteFile(path.Join(dest, name), content, 0644)
+func printExtracted(name string, size int, printSize bool) {
+	if printSize {
+		fmt.Printf("%s\t%d\n", name, size)
+	} else {
+		fmt.Printf("%s\n", name)
 	}
 }
 
-func ExtractFiles(name string, content []byte, dest string, force bool) error {
+func createWriter(opts Options) func(string, []byte) error {
+	if opts.Test {
+		return func(name string, content []byte) error {
+			printExtracted(path.Join(opts.Dest, name), len(content), opts.Long)
+			return nil
+		}
+	}
+	os.MkdirAll(opts.Dest, 0755)
+	return func(name string, content []byte) error {
+		full_path := path.Join(opts.Dest, name)
+		if !opts.Force {
+			_, err := os.Stat(full_path)
+			if !os.IsNotExist(err) {
+				log.Warnf("File %s already exists", path.Join(opts.Dest, name))
+				return nil
+			}
+		}
+		printExtracted(full_path, len(content), opts.Long)
+		return os.WriteFile(full_path, content, 0644)
+	}
+}
+
+func createFilter(opts Options, writer func(string, []byte) error) func(string, []byte) error {
+	if len(opts.Match) == 0 {
+		return writer
+	}
+	matchers := make([]*regexp.Regexp, 0)
+	for _, match := range opts.Match {
+		matcher, err := regexp.Compile(match)
+		if err != nil {
+			log.Warnf("Failed to compile regex %s: %s", match, err)
+			continue
+		}
+		matchers = append(matchers, matcher)
+	}
+
+	return func(name string, content []byte) error {
+		found := false
+		for _, match := range matchers {
+			if match.MatchString(name) {
+				found = true
+			}
+		}
+		if found {
+			return writer(name, content)
+		}
+		return nil
+	}	
+}
+
+func ExtractFiles(name string, content []byte, opts Options) error {
 	var nameReader func(*bytes.Reader, uint32, *EntryName) error
 	err := extractBatch(bytes.NewReader(content), readNameWindows, nil)
 	if err == nil {
@@ -146,10 +190,19 @@ func ExtractFiles(name string, content []byte, dest string, force bool) error {
 			return err
 		}
 	}
-	return extractBatch(bytes.NewReader(content), nameReader, createWriter(dest, force))
+	return extractBatch(bytes.NewReader(content), nameReader, createFilter(opts, createWriter(opts)))
 }
 
-func FindAndExtractBatches(paths []string, dest string, force bool) error {
+type Options struct {
+	Dest string
+	Force bool
+	Unpack bool
+	Test bool
+	Long bool
+	Match []string
+}
+
+func FindAndExtractBatches(paths []string, opts Options) error {
 	batches := make([]string, 0)
 	real_paths := paths
 	if len(paths) == 0 {
@@ -173,7 +226,7 @@ func FindAndExtractBatches(paths []string, dest string, force bool) error {
 		if err != nil {
 			return err
 		}
-		err = ExtractFiles(batch, content, dest, force)
+		err = ExtractFiles(batch, content, opts)
 		if err != nil {
 			return err
 		}

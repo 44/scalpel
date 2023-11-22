@@ -3,7 +3,6 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/44/scalpel/internal/batch"
-	log "github.com/sirupsen/logrus"
 )
 
 var batchCmd = &cobra.Command{
@@ -15,17 +14,14 @@ var batchCmd = &cobra.Command{
 }
 
 func execute(cmd *cobra.Command, args []string) {
-	dest, err := cmd.Flags().GetString("dest")
-	if err != nil {
-		log.Errorf("Error getting destination: %v", err)
-		return
-	}
-	force, err := cmd.Flags().GetBool("force")
-	if err != nil {
-		log.Errorf("Error getting force: %v", err)
-		return
-	}
-	batch.FindAndExtractBatches(args, dest, force)
+	opts := batch.Options{}
+	opts.Dest, _ = cmd.Flags().GetString("dest")
+	opts.Match, _ = cmd.Flags().GetStringSlice("match")
+	opts.Unpack, _ = cmd.Flags().GetBool("unpack")
+	opts.Test, _ = cmd.Flags().GetBool("test")
+	opts.Long, _ = cmd.Flags().GetBool("long")
+	opts.Force, _ = cmd.Flags().GetBool("force")
+	batch.FindAndExtractBatches(args, opts)
 }
 
 func init() {
@@ -34,4 +30,6 @@ func init() {
 	batchCmd.Flags().StringSliceP("match", "m", []string{}, "regex to match files to extract")
 	batchCmd.Flags().BoolP("force", "f", false, "Force overwrite of existing files")
 	batchCmd.Flags().BoolP("unpack", "z", false, "Unpack gzipped logs")
+	batchCmd.Flags().BoolP("test", "t", false, "Do not extract logs from batches, but rather print log files included")
+	batchCmd.Flags().BoolP("long", "l", false, "Show size of the log files")
 }

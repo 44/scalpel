@@ -14,12 +14,14 @@ var rootCmd = &cobra.Command{
 		verbose, _ := cmd.Flags().GetCount("verbose")
 		switch verbose {
 		case 0:
-			log.SetLevel(log.WarnLevel)
+			log.SetLevel(log.ErrorLevel)
 		case 1:
-			log.SetLevel(log.InfoLevel)
+			log.SetLevel(log.WarnLevel)
 		case 2:
-			log.SetLevel(log.DebugLevel)
+			log.SetLevel(log.InfoLevel)
 		case 3:
+			log.SetLevel(log.DebugLevel)
+		case 4:
 			log.SetLevel(log.TraceLevel)
 		}
 		log.SetFormatter(&logFormatter{ name: "scalpel" })
